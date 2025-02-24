@@ -1,4 +1,4 @@
-# Infrastructure Assessment
+# DevOps Assessment
 
 This project contains three services:
 
@@ -14,10 +14,30 @@ There are 2 options for getting the right tools on developer's laptop:
  * **quick** leverage Docker+Dojo. Requires only to install docker and dojo on your laptop.
  * **manual** requires to install all tools manually
 
- The rest of this file describes the quick way, please refer to [MANUAL_SETUP.md](MANUAL_SETUP.md) for the other option.
+ The rest of this file describes the manual way, please refer to [README.md](README.md) for the other option.
 
+## Manual setup
 
-This project is also using `make`, so ensure that you have that on your PATH too.
+You need all the tools below installed locally:
+### Prerequisites to run the Python applications
+
+ * make
+ * Python and a virtualenv
+
+### Prerequisites for running infrastructure code
+
+ * make
+ * local docker daemon
+ * docker buildx addon
+ * terraform 1.2.7
+ * ssh-keygen
+ * azure cli
+
+ ### Installing docker buildx
+
+This is a multi arch build tool to support x86 builds on ARM based laptops
+
+More details here: https://github.com/abiosoft/colima/discussions/273
 
 # Infrastructure setup
 
@@ -25,32 +45,17 @@ This is a multi-step guide to setup some base infrastructure, and then, on top o
 
 ## Base infrastructure setup
 
-With an assumption that we have a new, empty Azure subscription, we need to provision some base infrastructure just one time.
+With an assumption that we have a new, empty AWS account, we need to provision some base infrastructure just one time.
 These steps will provision:
- * terraform backend in in resource_group_name, storage_account_name and container_name
- * a minimal VPC with 2 subnets
+ * terraform backend in resource_group_name, storage_account_name and container_name
+ * a minimal VPC with 3 subnets
  * ACR repositories for docker images
-
-### Setup Azure credentials
-The interviewer will send you an email with Azure credentials, which you should export in your shell.
-
-```sh
-export CODE_PREFIX=****
-```
-
-Now run:
-```sh
-source randomize.sh && randomize
-make backend-support.infra
-make base.infra
-```
 
 ## Build docker images
 
-Artifacts from previous stage will be packaged into docker images, then pushed to ECR.
+Artifacts from previous stage will be packaged into docker images, then pushed to ACR.
 
 Each application has its own image. Individual image can be built with:
-
 ```sh
 make <app-name>.docker
 # for example:
@@ -58,15 +63,13 @@ make front-end.docker
 ```
 
 But you can build all images at once with
-
 ```sh
 make docker
 ```
 
 ## Push docker images
 
-Before applications can be deployed on AWS, the docker images have to be pushed:
-
+Before applications can be deployed on Azure, the docker images have to be pushed:
 ```sh
 make push
 ```
@@ -74,17 +77,10 @@ make push
 ## Provision services
 
 Then, we can provision the backend and front-end services:
-
 ```sh
+make backend-support.infra
+make base.infra
 make news.infra
-```
-
-Terraform will print the output with URL of the front_end server, e.g.
-
-```
-Outputs:
-
-frontend_url = http://34.244.219.156:8080
 ```
 
 ## Provision all services
@@ -92,10 +88,23 @@ frontend_url = http://34.244.219.156:8080
 make deploy_interview
 ```
 
+Terraform will print the output with URL of the front_end server, e.g.
+```
+Outputs:
+
+frontend_url = http://34.244.219.156:8080
+```
+
 ## Delete services
 
 To delete the deployment provisioned by terraform, run following commands:
-
 ```sh
+make backend-support.deinfra
+make base.deinfra
 make news.deinfra
+```
+
+## Delete all services
+```sh
+make destroy_interview
 ```
