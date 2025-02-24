@@ -1,3 +1,8 @@
+data "azurerm_key_vault" "keyvault" {
+  name                = var.keyvault_name
+  resource_group_name = data.azurerm_resource_group.azure-resource.name
+}
+
 data "azurerm_user_assigned_identity" "identity-acr" {
   resource_group_name = data.azurerm_resource_group.azure-resource.name
   name                = "identity-acr"
@@ -232,7 +237,14 @@ resource "azurerm_linux_virtual_machine" "virtual-machine-frontend" {
     inline = [
       "chmod +x /home/adminuser/provision-frontend.sh",
       <<EOF
-      /home/adminuser/provision-frontend.sh ${var.prefix}frontend${var.acr_url_default}/${var.prefix}frontend:latest ${data.azurerm_user_assigned_identity.identity-acr.id} ${var.prefix}frontend http://${azurerm_linux_virtual_machine.virtual-machine-quotes.private_ip_address}:8082 http://${azurerm_linux_virtual_machine.virtual-machine-newsfeed.private_ip_address}:8081 ${local.url_static_blob}
+      /home/adminuser/provision-frontend.sh \
+        ${var.prefix}frontend${var.acr_url_default}/${var.prefix}frontend:latest \
+        ${data.azurerm_user_assigned_identity.identity-acr.id} \
+        ${var.prefix}frontend \
+        ${data.azurerm_key_vault.keyvault.name} \
+        http://${azurerm_linux_virtual_machine.virtual-machine-quotes.private_ip_address}:8082 \
+        http://${azurerm_linux_virtual_machine.virtual-machine-newsfeed.private_ip_address}:8081 \
+        ${local.url_static_blob}
       EOF
     ]
   }

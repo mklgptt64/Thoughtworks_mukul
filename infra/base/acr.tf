@@ -1,52 +1,26 @@
+module "container_registry" {
+  source              = "./modules/container_registry"
+  resource_group_name = data.azurerm_resource_group.azure-resource.name
+  location            = var.location
+  prefix             = var.prefix
+  acr_names           = ["quotes", "newsfeed", "frontend"]
+}
 
-resource "azurerm_user_assigned_identity" "identity-acr" {
+resource "azurerm_user_assigned_identity" "identity_acr" {
   resource_group_name = data.azurerm_resource_group.azure-resource.name
   location            = var.location
   name                = "identity-acr"
 }
-resource "azurerm_container_registry" "quotes" {
-  name                = "${var.prefix}quotes"
-  resource_group_name = data.azurerm_resource_group.azure-resource.name
-  location            = var.location
-  sku                 = "Basic"
-  admin_enabled       = false
+
+locals {
+  acrs = { for name in module.container_registry.acr_names : name => module.container_registry.acr_ids[name] }
 }
 
-resource "azurerm_container_registry" "newsfeed" {
-  name                = "${var.prefix}newsfeed"
-  resource_group_name = data.azurerm_resource_group.azure-resource.name
-  location            = var.location
-  sku                 = "Basic"
-  admin_enabled       = false
-}
-
-resource "azurerm_container_registry" "frontend" {
-  name                = "${var.prefix}frontend"
-  resource_group_name = data.azurerm_resource_group.azure-resource.name
-  location            = var.location
-  sku                 = "Basic"
-  admin_enabled       = false
-}
-resource "random_uuid" "acrpull_id_frontend" {
+resource "random_uuid" "acrpull_ids" {
+  for_each = local.acrs
   keepers = {
-    acr_id = "${azurerm_container_registry.frontend.id}"
-    sp_id  = "${azurerm_user_assigned_identity.identity-acr.principal_id}"
-    role   = "AcrPull"
-  }
-}
-
-resource "random_uuid" "acrpull_id_quotes" {
-  keepers = {
-    acr_id = "${azurerm_container_registry.quotes.id}"
-    sp_id  = "${azurerm_user_assigned_identity.identity-acr.principal_id}"
-    role   = "AcrPull"
-  }
-}
-
-resource "random_uuid" "acrpull_id_newsfeed" {
-  keepers = {
-    acr_id = "${azurerm_container_registry.newsfeed.id}"
-    sp_id  = "${azurerm_user_assigned_identity.identity-acr.principal_id}"
+    acr_id = each.value
+    sp_id  = azurerm_user_assigned_identity.identity_acr.principal_id
     role   = "AcrPull"
   }
 }
@@ -55,25 +29,12 @@ data "azurerm_role_definition" "acrpull" {
   name = "AcrPull"
 }
 
-resource "azurerm_role_assignment" "acr_acrpull_quotes" {
-  name               = random_uuid.acrpull_id_quotes.result
-  scope              = azurerm_container_registry.quotes.id
+resource "azurerm_role_assignment" "acr_acrpull" {
+  for_each = local.acrs
+  name               = random_uuid.acrpull_ids[each.key].result
+  scope              = each.value
   role_definition_id = data.azurerm_role_definition.acrpull.id
-  principal_id       = azurerm_user_assigned_identity.identity-acr.principal_id
-}
-
-resource "azurerm_role_assignment" "acr_acrpull_newsfeed" {
-  name               = random_uuid.acrpull_id_newsfeed.result
-  scope              = azurerm_container_registry.newsfeed.id
-  role_definition_id = data.azurerm_role_definition.acrpull.id
-  principal_id       = azurerm_user_assigned_identity.identity-acr.principal_id
-}
-
-resource "azurerm_role_assignment" "acr_acrpull_frontend" {
-  name               = random_uuid.acrpull_id_frontend.result
-  scope              = azurerm_container_registry.frontend.id
-  role_definition_id = data.azurerm_role_definition.acrpull.id
-  principal_id       = azurerm_user_assigned_identity.identity-acr.principal_id
+  principal_id       = azurerm_user_assigned_identity.identity_acr.principal_id
 }
 
 locals {

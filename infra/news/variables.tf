@@ -9,3 +9,8 @@ variable "location" {
 variable "acr_url_default" {
   default = ".azurecr.io"
 }
+
+variable "keyvault_name" {
+  description = "Name of the Azure Key Vault storing sensitive data"
+  default     = "news4321-keyvault"
+}

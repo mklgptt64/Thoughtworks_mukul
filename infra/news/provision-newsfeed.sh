@@ -20,6 +20,7 @@ sudo docker pull $DOCKER_IMAGE
 
 sudo docker run -d \
   --name newsfeed \
-  --restart always \
+#  --restart always \
+  --restart unless-stopped \
   -p 8081:8081 \
   $DOCKER_IMAGE

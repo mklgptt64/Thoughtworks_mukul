@@ -20,6 +20,7 @@ sudo docker pull $DOCKER_IMAGE
 
 sudo docker run -d \
   --name quotes \
-  --restart always \
+#  --restart always \
+  --restart unless-stopped \
   -p 8082:8082 \
   $DOCKER_IMAGE
