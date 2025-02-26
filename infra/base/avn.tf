@@ -1,3 +1,42 @@
+locals {
+  # Subnets definition
+  subnets = [
+    { name = "public_subnet_a", address_prefix = "10.5.0.0/24" },
+    { name = "public_subnet_b", address_prefix = "10.5.1.0/24" }
+  ]
+  
+  # Public IPs names and their corresponding resources
+  public_ips = [
+    { name = "public-ip-quotes", allocation_method = "Dynamic" },
+    { name = "public-ip-newsfeed", allocation_method = "Dynamic" },
+    { name = "public-ip-frontend", allocation_method = "Dynamic" }
+  ]
+
+  # Network Security Groups (NSGs)
+  nsgs = [
+    "security-group-quotes",
+    "security-group-newsfeed",
+    "security-group-frontend"
+  ]
+  
+  # Network Security Rules for inbound and outbound
+  security_rules = [
+    # Outbound rules
+    { name = "rule-outbound-quotes", priority = 1000, direction = "Outbound", nsg = "security-group-quotes" },
+    { name = "rule-outbound-newsfeed", priority = 1001, direction = "Outbound", nsg = "security-group-newsfeed" },
+    { name = "rule-outbound-frontend", priority = 1002, direction = "Outbound", nsg = "security-group-frontend" },
+
+    # Inbound SSH rules
+    { name = "rule-inbound-ssh-quotes", priority = 1003, direction = "Inbound", port = "22", nsg = "security-group-quotes" },
+    { name = "rule-inbound-ssh-newsfeed", priority = 1004, direction = "Inbound", port = "22", nsg = "security-group-newsfeed" },
+    { name = "rule-inbound-ssh-frontend", priority = 1005, direction = "Inbound", port = "22", nsg = "security-group-frontend" },
+
+    # Inbound application port rules
+    { name = "rule-inbound-quotes-8082", priority = 1006, direction = "Inbound", port = "8082", nsg = "security-group-quotes" },
+    { name = "rule-inbound-newsfeed-8081", priority = 1007, direction = "Inbound", port = "8081", nsg = "security-group-newsfeed" },
+    { name = "rule-inbound-frontend-8080", priority = 1008, direction = "Inbound", port = "8080", nsg = "security-group-frontend" }
+  ]
+}
 
 resource "azurerm_virtual_network" "virtual-network" {
   name                = "virtual-network"
@@ -6,47 +45,29 @@ resource "azurerm_virtual_network" "virtual-network" {
   address_space       = ["10.5.0.0/16"]
 }
 
-resource "azurerm_subnet" "public_subnet_a" {
-  name                 = "public_subnet_a"
-  resource_group_name  = data.azurerm_resource_group.azure-resource.name
+# Subnets creation using for_each
+resource "azurerm_subnet" "subnets" {
+  for_each            = { for subnet in local.subnets : subnet.name => subnet }
+  name                = each.value.name
+  resource_group_name = data.azurerm_resource_group.azure-resource.name
   virtual_network_name = azurerm_virtual_network.virtual-network.name
-  address_prefixes     = ["10.5.0.0/24"]
+  address_prefixes    = [each.value.address_prefix]
 }
 
-resource "azurerm_subnet" "public_subnet_b" {
-  name                 = "public_subnet_b"
-  resource_group_name  = data.azurerm_resource_group.azure-resource.name
-  virtual_network_name = azurerm_virtual_network.virtual-network.name
-  address_prefixes     = ["10.5.1.0/24"]
-}
-
-resource "azurerm_public_ip" "public-ip-quotes" {
-  name                = "public-ip-quotes"
+# Public IPs creation using for_each
+resource "azurerm_public_ip" "public_ips" {
+  for_each            = { for ip in local.public_ips : ip.name => ip }
+  name                = each.value.name
   resource_group_name = data.azurerm_resource_group.azure-resource.name
   location            = azurerm_virtual_network.virtual-network.location
-  allocation_method   = "Dynamic"
+  allocation_method   = each.value.allocation_method
 }
 
-resource "azurerm_public_ip" "public-ip-newsfeed" {
-  name                = "public-ip-newsfeed"
-  resource_group_name = data.azurerm_resource_group.azure-resource.name
-  location            = azurerm_virtual_network.virtual-network.location
-  allocation_method   = "Dynamic"
-}
-
-resource "azurerm_public_ip" "public-ip-frontend" {
-  name                = "public-ip-frontend"
-  resource_group_name = data.azurerm_resource_group.azure-resource.name
-  location            = azurerm_virtual_network.virtual-network.location
-  allocation_method   = "Dynamic"
-}
-
-# Routing table for public subnets
+# Route table for public subnets
 resource "azurerm_route_table" "route-table" {
   name                          = "route-table"
   location                      = azurerm_virtual_network.virtual-network.location
   resource_group_name           = azurerm_virtual_network.virtual-network.resource_group_name
-  disable_bgp_route_propagation = false
 
   route {
     name           = "route"
@@ -59,212 +80,64 @@ resource "azurerm_route_table" "route-table" {
   }
 }
 
-# Associate the routing table to public subnet A
-resource "azurerm_subnet_route_table_association" "association-subnet-a" {
-  subnet_id      = azurerm_subnet.public_subnet_a.id
-  route_table_id = azurerm_route_table.route-table.id
+# Subnet route table association using for_each
+resource "azurerm_subnet_route_table_association" "subnet_association" {
+  for_each            = { for subnet in azurerm_subnet.subnets : subnet.id => subnet }
+  subnet_id           = each.key
+  route_table_id      = azurerm_route_table.route-table.id
 }
 
-# Associate the routing table to public subnet B
-resource "azurerm_subnet_route_table_association" "association-subnet-b" {
-  subnet_id      = azurerm_subnet.public_subnet_b.id
-  route_table_id = azurerm_route_table.route-table.id
-}
-
-resource "azurerm_network_security_group" "security-group-quotes" {
-  name                = "security-group-quotes"
+# NSG creation using for_each
+resource "azurerm_network_security_group" "nsgs" {
+  for_each            = toset(local.nsgs)
+  name                = each.value
   location            = var.location
   resource_group_name = data.azurerm_resource_group.azure-resource.name
 }
 
-resource "azurerm_network_security_group" "security-group-newsfeed" {
-  name                = "security-group-newsfeed"
-  location            = var.location
+# Security rules creation using for_each
+resource "azurerm_network_security_rule" "security_rules" {
+  for_each            = { for rule in local.security_rules : rule.name => rule }
+  name                = each.value.name
+  priority            = each.value.priority
+  direction           = each.value.direction
+  access              = "Allow"
+  protocol            = "Tcp"
+  source_port_range   = "*"
+  destination_port_range = each.value.port != null ? each.value.port : "*"
+  source_address_prefix = "*"
+  destination_address_prefix = "*"
+  network_security_group_name = azurerm_network_security_group.nsgs[each.value.nsg].name
   resource_group_name = data.azurerm_resource_group.azure-resource.name
 }
 
-resource "azurerm_network_security_group" "security-group-frontend" {
-  name                = "security-group-frontend"
-  location            = var.location
-  resource_group_name = data.azurerm_resource_group.azure-resource.name
-}
-
-resource "azurerm_network_security_rule" "rule-outbound-quotes" {
-  name                        = "rule-outbound-quotes"
-  priority                    = 1000
-  direction                   = "Outbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "*"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = data.azurerm_resource_group.azure-resource.name
-  network_security_group_name = azurerm_network_security_group.security-group-quotes.name
-}
-
-resource "azurerm_network_security_rule" "rule-outbound-newsfeed" {
-  name                        = "rule-outbound-newsfeed"
-  priority                    = 1001
-  direction                   = "Outbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "*"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = data.azurerm_resource_group.azure-resource.name
-  network_security_group_name = azurerm_network_security_group.security-group-newsfeed.name
-}
-
-resource "azurerm_network_security_rule" "rule-outbound-frontend" {
-  name                        = "rule-outbound-frontend"
-  priority                    = 1002
-  direction                   = "Outbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "*"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = data.azurerm_resource_group.azure-resource.name
-  network_security_group_name = azurerm_network_security_group.security-group-frontend.name
-}
-
-resource "azurerm_network_security_rule" "rule-inbound-ssh-quotes" {
-  name                        = "rule-inbound-ssh-quotes"
-  priority                    = 1003
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "22"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "VirtualNetwork"
-  resource_group_name         = data.azurerm_resource_group.azure-resource.name
-  network_security_group_name = azurerm_network_security_group.security-group-quotes.name
-}
-
-resource "azurerm_network_security_rule" "rule-inbound-ssh-newsfeed" {
-  name                        = "rule-inbound-ssh-newsfeed"
-  priority                    = 1004
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "22"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "VirtualNetwork"
-  resource_group_name         = data.azurerm_resource_group.azure-resource.name
-  network_security_group_name = azurerm_network_security_group.security-group-newsfeed.name
-}
-
-resource "azurerm_network_security_rule" "rule-inbound-ssh-frontend" {
-  name                        = "rule-inbound-ssh"
-  priority                    = 1005
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "22"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "VirtualNetwork"
-  resource_group_name         = data.azurerm_resource_group.azure-resource.name
-  network_security_group_name = azurerm_network_security_group.security-group-frontend.name
-}
-
-resource "azurerm_network_security_rule" "rule-inbound-quotes-8082" {
-  name                        = "rule-inbound-quotes-8082"
-  priority                    = 1006
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "8082"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = data.azurerm_resource_group.azure-resource.name
-  network_security_group_name = azurerm_network_security_group.security-group-quotes.name
-}
-
-resource "azurerm_network_security_rule" "rule-inbound-newsfeed-8081" {
-  name                        = "rule-inbound-newsfeed-8081"
-  priority                    = 1007
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "8081"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = data.azurerm_resource_group.azure-resource.name
-  network_security_group_name = azurerm_network_security_group.security-group-newsfeed.name
-}
-
-resource "azurerm_network_security_rule" "rule-inbound-frontend-8080" {
-  name                        = "rule-inbound-frontend-8080"
-  priority                    = 1008
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "8080"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = data.azurerm_resource_group.azure-resource.name
-  network_security_group_name = azurerm_network_security_group.security-group-frontend.name
-}
-
-resource "azurerm_network_interface" "network-interface-quotes" {
-  name                = "network-interface-quotes"
+# Network Interface creation using for_each
+resource "azurerm_network_interface" "network_interfaces" {
+  for_each            = { for idx, ip in local.public_ips : ip.name => {
+    name         = "network-interface-${ip.name}"
+    subnet       = local.subnets[idx % length(local.subnets)].name
+    public_ip    = ip.name
+    network_security_group = local.nsgs[idx % length(local.nsgs)]
+  }}
+  
+  name                = each.value.name
   location            = var.location
   resource_group_name = data.azurerm_resource_group.azure-resource.name
 
   ip_configuration {
     name                          = "internal"
-    subnet_id                     = azurerm_subnet.public_subnet_a.id
+    subnet_id                     = azurerm_subnet.subnets[each.value.subnet].id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.public-ip-quotes.id
+    public_ip_address_id          = azurerm_public_ip.public_ips[each.value.public_ip].id
   }
+
+  network_security_group_id = azurerm_network_security_group.nsgs[each.value.network_security_group].id
 }
 
-resource "azurerm_network_interface" "network-interface-newsfeed" {
-  name                = "network-interface-newsfeed"
-  location            = var.location
-  resource_group_name = data.azurerm_resource_group.azure-resource.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.public_subnet_a.id
-    private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.public-ip-newsfeed.id
-  }
-}
-
-resource "azurerm_network_interface" "network-interface-frontend" {
-  name                = "network-interface-frontend"
-  location            = var.location
-  resource_group_name = data.azurerm_resource_group.azure-resource.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.public_subnet_b.id
-    private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.public-ip-frontend.id
-  }
-}
-
-resource "azurerm_network_interface_security_group_association" "association-ni-sg-quotes" {
-  network_interface_id      = azurerm_network_interface.network-interface-quotes.id
-  network_security_group_id = azurerm_network_security_group.security-group-quotes.id
-}
-
-resource "azurerm_network_interface_security_group_association" "association-ni-sg-newsfeed" {
-  network_interface_id      = azurerm_network_interface.network-interface-newsfeed.id
-  network_security_group_id = azurerm_network_security_group.security-group-newsfeed.id
-}
-
-resource "azurerm_network_interface_security_group_association" "association-ni-sg-frontend" {
-  network_interface_id      = azurerm_network_interface.network-interface-frontend.id
-  network_security_group_id = azurerm_network_security_group.security-group-frontend.id
+# NIC and NSG association using for_each
+resource "azurerm_network_interface_security_group_association" "nic_sg_association" {
+  for_each = azurerm_network_interface.network_interfaces
+  
+  network_interface_id      = each.value.id
+  network_security_group_id = azurerm_network_security_group.nsgs[each.value.network_security_group].id
 }
